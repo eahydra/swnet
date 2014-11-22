@@ -14,10 +14,9 @@ var (
 )
 
 // PacketHandler is used to process packet that recved from remote session
-type PacketHandler interface {
-	// When got a valid packet from PacketReader, you can dispatch it.
-	Handle(s *Session, packet interface{})
-}
+// When got a valid packet from PacketReader, you can dispatch it.
+
+type PacketHandler func(s *Session, packet interface{})
 
 // PacketReader is used to unmarshal a complete packet from buff
 type PacketReader interface {
@@ -145,7 +144,7 @@ func (s *Session) recvLoop() {
 		if err != nil {
 			break
 		}
-		s.packetHandler.Handle(s, packet)
+		s.packetHandler(s, packet)
 	}
 }
 

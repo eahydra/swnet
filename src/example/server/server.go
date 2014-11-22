@@ -20,7 +20,7 @@ func main() {
 	swProtocol := protocol.NewDefaultProtocol(nil, false)
 	dispatcher := protocol.NewDispatcher()
 	dispatcher.AddHandler(protocol.PKTTYPE_KEEPALIVE, onKeepalive)
-	server, err := swnet.Listen("tcp4", "127.0.0.1:19905", swProtocol, dispatcher, 1024)
+	server, err := swnet.Listen("tcp4", "127.0.0.1:19905", swProtocol, dispatcher.Handle, 1024)
 	if err != nil {
 		fmt.Println("swnet.Listen failed. err:", err)
 		return
