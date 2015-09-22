@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 var (
@@ -16,7 +17,7 @@ var (
 // PacketHandler is used to process packet that recved from remote session
 // When got a valid packet from PacketReader, you can dispatch it.
 
-type PacketHandler func(s *Session, packet interface{})
+type PacketHandler func(s *Session, packetData interface{})
 
 // PacketReader is used to unmarshal a complete packet from buff
 type PacketReader interface {
@@ -31,7 +32,7 @@ type PacketReader interface {
 type PacketWriter interface {
 	// Build a complete packet. If buff's capacity is too small,  you can make a new one
 	// and return it to reuse.
-	BuildPacket(packet interface{}, buff []byte) ([]byte, error)
+	BuildPacket(packetData interface{}, buff []byte) ([]byte, error)
 
 	// How to write data to conn is up to you. So you can set write timeout or other option.
 	WritePacket(conn net.Conn, buff []byte) error
@@ -47,6 +48,7 @@ type PacketProtocol interface {
 // queue data to send.
 type Session struct {
 	closed         int32
+	timeout        time.Duration
 	conn           net.Conn
 	sendChan       chan interface{}
 	stopedChan     chan struct{}
@@ -61,6 +63,7 @@ type Session struct {
 func NewSession(conn net.Conn, protocol PacketProtocol, handler PacketHandler, sendChanSize int) *Session {
 	return &Session{
 		closed:         -1,
+		timeout:        0,
 		conn:           conn,
 		stopedChan:     make(chan struct{}),
 		sendChan:       make(chan interface{}, sendChanSize),
@@ -75,6 +78,16 @@ func Dial(network, address string, protocol PacketProtocol, handler PacketHandle
 		return nil, err
 	}
 	return NewSession(conn, protocol, handler, sendChanSize), nil
+}
+
+// set timeout, enable if value > 0, unit is ms
+func (s *Session) SetTimeout(timeout time.Duration) {
+	s.timeout = timeout
+}
+
+// get timeout, enable if value > 0, unit is ms
+func (s *Session) GetTimeout() time.Duration {
+	return s.timeout
 }
 
 // RawConn return net.Conn, so you can set/get parameter with it
@@ -137,14 +150,26 @@ func (s *Session) recvLoop() {
 	defer s.Close()
 
 	var recvBuff []byte
-	var packet interface{}
+	var packetData interface{}
 	var err error
 	for {
-		packet, recvBuff, err = s.packetProtocol.ReadPacket(s.conn, recvBuff)
+
+		//set timeout
+		if err := s.conn.SetReadDeadline(time.Now().Add((time.Millisecond) * (s.timeout))); err != nil {
+			break
+		}
+
+		packetData, recvBuff, err = s.packetProtocol.ReadPacket(s.conn, recvBuff)
 		if err != nil {
 			break
 		}
-		s.packetHandler(s, packet)
+
+		//reset timeout
+		if err := s.conn.SetReadDeadline(time.Time{}); err != nil {
+			break
+		}
+
+		s.packetHandler(s, packetData)
 	}
 }
 
@@ -156,20 +181,20 @@ func (s *Session) sendLoop() {
 
 	for {
 		select {
-		case packet, ok := <-s.sendChan:
+		case packetData, ok := <-s.sendChan:
 			{
 				if !ok {
 					return
 				}
 
-				if sendBuff, err = s.packetProtocol.BuildPacket(packet, sendBuff); err == nil {
+				if sendBuff, err = s.packetProtocol.BuildPacket(packetData, sendBuff); err == nil {
 					err = s.packetProtocol.WritePacket(s.conn, sendBuff)
 				}
 				if err != nil {
 					return
 				}
 				if s.sendCallback != nil {
-					s.sendCallback(s, packet)
+					s.sendCallback(s, packetData)
 				}
 			}
 		case <-s.stopedChan:
@@ -183,9 +208,9 @@ func (s *Session) sendLoop() {
 // AsyncSend queue the packet to the chan of send,
 // if the send channel is full, return ErrSendChanBlocking.
 // if the session had been closed, return ErrStoped
-func (s *Session) AsyncSend(packet interface{}) error {
+func (s *Session) AsyncSend(packetData interface{}) error {
 	select {
-	case s.sendChan <- packet:
+	case s.sendChan <- packetData:
 	case <-s.stopedChan:
 		return ErrStoped
 	default:

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"swnet"
+	"time"
 )
 
 func onKeepaliveAck(session *swnet.Session, packet protocol.Packet) {
@@ -18,6 +19,7 @@ func onKeepaliveAck(session *swnet.Session, packet protocol.Packet) {
 }
 
 func main() {
+	tcpTimeout := 180000//ms
 	swProtocol := protocol.NewDefaultProtocol(nil, false)
 	dispatcher := protocol.NewDispatcher()
 	dispatcher.AddHandler(protocol.PKTTYPE_KEEPALIVEACK, onKeepaliveAck)
@@ -28,6 +30,8 @@ func main() {
 	}
 	defer session.Close()
 
+	session.SetTimeout(time.Duration(tcpTimeout))
+	
 	session.SetCloseCallback(func(*swnet.Session) {
 		fmt.Println("exit")
 		os.Exit(0)
