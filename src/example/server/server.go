@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"swnet"
+	"time"
 )
 
 func onKeepalive(session *swnet.Session, packet protocol.Packet) {
@@ -17,6 +18,8 @@ func onKeepalive(session *swnet.Session, packet protocol.Packet) {
 }
 
 func main() {
+    
+	tcpTimeout := 180000//ms
 	swProtocol := protocol.NewDefaultProtocol(nil, false)
 	dispatcher := protocol.NewDispatcher()
 	dispatcher.AddHandler(protocol.PKTTYPE_KEEPALIVE, onKeepalive)
@@ -33,6 +36,7 @@ func main() {
 		tcpConn.SetNoDelay(true)
 		tcpConn.SetReadBuffer(64 * 1024)
 		tcpConn.SetWriteBuffer(64 * 1024)
+		session.SetTimeout(time.Duration(tcpTimeout))
 
 		session.SetCloseCallback(func(s *swnet.Session) {
 			fmt.Println("session closed!")
